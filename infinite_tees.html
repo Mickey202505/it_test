@@ -1,0 +1,1222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="mobile-web-app-capable" content="yes">
+<title>Infinite Tees</title>
+<script src="https://unpkg.com/jsqr@1.4.0/dist/jsQR.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  /* Chrome lock overlay */
+  #chrome-warning {
+    display: none;
+    position: fixed; inset: 0; z-index: 99999;
+    background: #0f0f0f;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    text-align: center;
+    padding: 40px;
+  }
+  #chrome-warning.show { display: flex; }
+  #chrome-warning h2 { color: #fff; font-size: 24px; font-weight: 400; }
+  #chrome-warning p { color: #888; font-size: 14px; max-width: 320px; line-height: 1.6; }
+  #chrome-warning .chrome-icon { font-size: 64px; }
+
+  /* Lock to landscape */
+  @media screen and (orientation: portrait) {
+    #portrait-warning { display: flex !important; }
+    body > *:not(#portrait-warning) { display: none !important; }
+  }
+  #portrait-warning {
+    display: none;
+    position: fixed; inset: 0; z-index: 9999;
+    background: #0f0f0f;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 20px;
+    text-align: center;
+    padding: 40px;
+  }
+  #portrait-warning svg { opacity: 0.6; animation: rotateHint 2s ease-in-out infinite; }
+  @keyframes rotateHint {
+    0%   { transform: rotate(0deg); }
+    40%  { transform: rotate(90deg); }
+    60%  { transform: rotate(90deg); }
+    100% { transform: rotate(0deg); }
+  }
+  html, body { background: #0f0f0f; font-family: 'Segoe UI', sans-serif; color: #fff; height: 100%; width: 100%; overflow: hidden; }
+
+  .page { display: none; position: fixed; inset: 0; flex-direction: column; align-items: center; justify-content: flex-start; padding: 16px 16px 12px; overflow: hidden; }
+  .page.active { display: flex; }
+
+  /* Connection indicator */
+  #connIndicator {
+    display: inline-flex; align-items: center; gap: 8px;
+    padding: 6px 14px; border-radius: 20px; font-size: 14px; font-weight: 700;
+    background: #1a1a1a; border: 2px solid #333;
+    cursor: pointer; user-select: none;
+  }
+  #connDot {
+    width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0;
+  }
+  #connDot.connected    { background: #1D9E75; box-shadow: 0 0 6px #1D9E75; }
+  #connDot.disconnected { background: #E24B4A; animation: blink 1s infinite; }
+  @keyframes blink { 0%,100% { opacity:1; } 50% { opacity:0.2; } }
+  #connLabel.connected    { color: #1D9E75; }
+  #connLabel.disconnected { color: #E24B4A; }
+
+  /* Top bar on every page */
+  .page-topbar {
+    display: flex; align-items: center; gap: 12px;
+    width: 100%; padding: 0 0 12px 0; flex-shrink: 0;
+  }
+
+  .back-arrow { width:52px; height:52px; cursor:pointer; user-select:none; flex-shrink:0; }
+  .back-arrow:active { opacity:0.7; transform:scale(0.93); }
+
+  .welcome-subtitle { font-size: 14px; color: #888; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 4px; }
+  .welcome-title { font-size: 48px; font-weight: 300; text-align: center; }
+  .welcome-title span { color: #EF9F27; }
+  .page-title { font-size: 36px; font-weight: 300; margin-bottom: 20px; text-align: center; }
+
+  .win-btn { display: inline-block; padding: 14px 0; width: 260px; text-align: center; cursor: pointer; font-size: 20px; font-weight: 700; color: #1a1a1a; background: #d4d4d4; border-top: 2px solid #efefef; border-left: 2px solid #efefef; border-right: 2px solid #888; border-bottom: 4px solid #888; border-radius: 20px; user-select: none; transition: transform 0.08s, border-bottom-width 0.08s; }
+  .win-btn:hover { background: #dcdcdc; }
+  .win-btn:active { border-bottom-width: 2px; transform: translateY(2px); }
+  .btn-stack { display: flex; flex-direction: column; gap: 14px; align-items: center; margin-top: 40px; }
+
+  /* IP entry box */
+  .scan-box { display: flex; flex-direction: column; align-items: center; gap: 16px; width: 100%; max-width: 400px; }
+  .scan-status-pill { padding: 10px 28px; border-radius: 30px; font-size: 14px; font-weight: 700; letter-spacing: 0.05em; }
+  .scan-status-pill.not-connected { background: #2a1a1a; border: 2px solid #E24B4A; color: #E24B4A; }
+  .scan-status-pill.connected { background: #0d2a1e; border: 2px solid #1D9E75; color: #1D9E75; }
+  .scan-status-pill.scanning { background: #1a1a10; border: 2px solid #EF9F27; color: #EF9F27; }
+  #videoContainer { position: relative; width: 340px; height: 260px; border: 2px solid #7F77DD; border-radius: 14px; overflow: hidden; background: #000; display: none; }
+  #video { width: 100%; height: 100%; object-fit: cover; }
+  #scanCanvas { display: none; }
+  .scan-line { position: absolute; left: 0; right: 0; height: 2px; background: #7F77DD; animation: scanAnim 2s linear infinite; }
+  @keyframes scanAnim { 0% { top: 0; } 100% { top: 100%; } }
+  #scanMsg { font-size: 12px; color: #666; text-align: center; min-height: 16px; }
+  .conn-btn { padding: 13px 0; width: 260px; text-align: center; cursor: pointer; font-size: 18px; font-weight: 700; color: #1a1a1a; background: #d4d4d4; border-top: 2px solid #efefef; border-left: 2px solid #efefef; border-right: 2px solid #888; border-bottom: 3px solid #888; border-radius: 14px; user-select: none; transition: transform 0.08s; }
+  .conn-btn:active { border-bottom-width: 1px; transform: translateY(2px); }
+  #connStatus { font-size: 12px; text-align: center; color: #888; min-height: 18px; }
+
+  /* Bag Mapping layout */
+  .bagmap-layout { display: flex; flex-direction: row; gap: 32px; align-items: flex-start; width: 100%; max-width: 100%; margin-top: 0; justify-content: center; flex-shrink: 0; }
+  .club-panel { display: flex; flex-direction: column; gap: 12px; width: 520px; min-width: 520px; max-width: 520px; }
+  .club-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; width: 100%; }
+  .map-btn { padding: 28px 0; text-align: center; cursor: pointer; font-size: 28px; font-weight: 700; color: #1a1a1a; background: #d4d4d4; border-top: 2px solid #efefef; border-left: 2px solid #efefef; border-right: 2px solid #888; border-bottom: 3px solid #888; border-radius: 10px; user-select: none; transition: background 0.08s, color 0.08s, box-shadow 0.08s; box-sizing: border-box; }
+  .map-btn:hover { background: #dcdcdc; }
+  .map-btn:active { box-shadow: inset 0 2px 4px rgba(0,0,0,0.2); }
+  .map-btn.selected { background: #7F77DD; color: #fff; box-shadow: inset 0 1px 3px rgba(0,0,0,0.3), 0 0 0 2px #afa9ec; }
+  .selected-label { font-size: 12px; color: #aaa; text-align: center; min-height: 18px; }
+  .action-btns { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; width: 100%; flex-shrink: 0; }
+  .action-btn { padding: 20px 0; text-align: center; cursor: pointer; font-size: 24px; font-weight: 700; color: #fff; border-radius: 10px; user-select: none; }
+  .action-btn:active { transform: translateY(2px); }
+  .action-btn.clear { background: #993C1D; border-top: 2px solid #F0997B; border-left: 2px solid #F0997B; border-right: 2px solid #4A1B0C; border-bottom: 3px solid #4A1B0C; }
+  .action-btn.apply { background: #534AB7; border-top: 2px solid #afa9ec; border-left: 2px solid #afa9ec; border-right: 2px solid #26215C; border-bottom: 3px solid #26215C; }
+  .action-btn.save  { background: #0F6E56; border-top: 2px solid #5DCAA5; border-left: 2px solid #5DCAA5; border-right: 2px solid #04342C; border-bottom: 3px solid #04342C; }
+  .bag-panel { display: flex; flex-direction: column; align-items: center; gap: 6px; flex: 1; justify-content: center; }
+  .golf-bag { width: 100%; max-width: 960px; display: flex; flex-direction: column; background: #1a1a2e; border: 2px solid #444; border-radius: 120px 120px 100px 100px; padding: 40px 32px; gap: 14px; }
+  .slot-row { display: flex; gap: 5px; }
+  .slot { border: 1.5px solid #555; display: flex; align-items: center; justify-content: center; cursor: pointer; font-size: 26px; font-weight: 700; color: #d4d4d4; border-radius: 10px; height: 100px; flex: 1; transition: background 0.15s; }
+  .slot:hover { background: #7F77DD !important; color: #fff; }
+  .slot.assigned { background: #1D9E75 !important; color: #fff; }
+  .slot.next-slot { outline: 2px solid #EF9F27; }
+  .cs-slot { cursor: pointer; }
+  .cs-slot.cs-selected { background: #7F77DD !important; color: #fff; outline: 2px solid #afa9ec; }
+
+  #msgLog { margin-top: 16px; width: 100%; max-width: 400px; background: #1a1a1a; border: 1px solid #333; border-radius: 10px; padding: 10px; font-size: 12px; color: #888; max-height: 120px; overflow-y: auto; display: block; min-height: 40px; }
+
+  /* Game Play buttons */
+  .gp-btn { padding: 12px 6px; text-align: center; cursor: pointer; font-size: 16px; font-weight: 700; border-radius: 10px; user-select: none; transition: transform 0.08s; min-height: 56px; display: flex; align-items: center; justify-content: center; line-height: 1.3; }
+  .gp-btn:active { transform: translateY(2px); }
+  .gp-gray { color: #1a1a1a; background: #d4d4d4; border-top: 2px solid #efefef; border-left: 2px solid #efefef; border-right: 2px solid #888; border-bottom: 3px solid #888; }
+  .gp-gray:hover { background: #dcdcdc; }
+  .gp-blue { color: #fff; background: #185FA5; border-top: 2px solid #85B7EB; border-left: 2px solid #85B7EB; border-right: 2px solid #042C53; border-bottom: 3px solid #042C53; }
+  .gp-blue:hover { background: #1a6db8; }
+  .gp-arrow-blue { color: #fff; background: #185FA5; border-top: 2px solid #85B7EB; border-left: 2px solid #85B7EB; border-right: 2px solid #042C53; border-bottom: 3px solid #042C53; font-size: 18px; flex-direction: column; gap: 2px; }
+  .gp-arrow-blue:hover { background: #1a6db8; }
+  .gp-empty { background: transparent; cursor: default; border: 1px dashed #222; }
+  .gp-empty:active { transform: none; }
+</style>
+</head>
+<body>
+
+<div id="portrait-warning">
+  <svg width="80" height="80" viewBox="0 0 80 80" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <rect x="20" y="8" width="40" height="64" rx="6" stroke="#EF9F27" stroke-width="3"/>
+    <circle cx="40" cy="62" r="3" fill="#EF9F27"/>
+    <path d="M8 40 L72 40 M58 26 L72 40 L58 54" stroke="#7F77DD" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+  </svg>
+  <p style="color:#EF9F27;font-size:20px;font-weight:500;">Please rotate your device</p>
+  <p style="color:#666;font-size:14px;">Infinite Tees requires landscape mode</p>
+</div>
+
+<!-- Chrome warning -->
+<div id="chrome-warning">
+  <div class="chrome-icon">🌐</div>
+  <h2>Please use Chrome</h2>
+  <p>Infinite Tees is designed for <strong style="color:#fff;">Google Chrome</strong> on Android tablets.</p>
+  <p style="color:#555;font-size:12px;">Other browsers may not support all features such as camera access, landscape lock and full screen mode.</p>
+  <div style="margin-top:10px;padding:12px 28px;background:#185FA5;border-radius:14px;color:#fff;font-size:14px;font-weight:700;border-top:2px solid #85B7EB;border-left:2px solid #85B7EB;border-right:2px solid #042C53;border-bottom:3px solid #042C53;" onclick="document.getElementById('chrome-warning').classList.remove('show')">
+    Continue Anyway
+  </div>
+</div>
+
+
+<!-- WELCOME -->
+<div class="page active" id="page-welcome" style="justify-content:flex-start;">
+
+  <div class="page-topbar">
+    <div id="connIndicator" onclick="goTo('page-settings')" title="Tap to connect">
+      <div id="connDot" class="disconnected"></div>
+      <span id="connLabel" class="disconnected">Not Connected</span>
+    </div>
+  </div>
+  <p class="welcome-subtitle">Welcome to</p>
+  <h1 class="welcome-title">infinite <span>tees</span></h1>
+  <div class="btn-stack">
+    <div class="win-btn" id="connectBtn" onclick="goTo('page-settings')">Connect to PC</div>
+    <div class="win-btn" onclick="goTo('page-bagmapping')">Bag Mapping</div>
+    <div class="win-btn" onclick="goTo('page-gameplay')">Game Play</div>
+    <div class="win-btn" style="background:#c0392b;color:#fff;border-top-color:#e74c3c;border-left-color:#e74c3c;border-right-color:#7b241c;border-bottom-color:#7b241c;margin-top:10px;" onclick="quitApp()">Quit</div>
+  </div>
+  <div style="position:fixed;bottom:20px;right:24px;text-align:right;">
+    <p style="font-size:15px;font-weight:500;color:#fff;letter-spacing:0.05em;">Created by Mickey Farren</p>
+    <p style="font-size:13px;color:#888;letter-spacing:0.05em;margin-top:2px;">v1.0.0</p>
+  </div>
+</div>
+
+<!-- SETTINGS -->
+<div class="page" id="page-settings" style="justify-content:flex-start;gap:16px;">
+
+  <div class="page-topbar">
+    <div class="back-arrow" onclick="goBack()" title="Back">
+      <svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="48" height="48" rx="10" fill="#d4d4d4" stroke="#888" stroke-width="2"/>
+        <rect x="2" y="2" width="48" height="3" rx="2" fill="#efefef"/>
+        <rect x="2" y="2" width="3" height="48" rx="2" fill="#efefef"/>
+        <path d="M32 14 L18 26 L32 38" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </div>
+    <div id="connIndicator" onclick="goTo('page-settings')" title="Tap to connect">
+      <div id="connDot" class="disconnected"></div>
+      <span id="connLabel" class="disconnected">Not Connected</span>
+    </div>
+  </div>
+
+  <div class="scan-box">
+    <div id="connStatusPill" class="scan-status-pill not-connected">Not Connected</div>
+
+    <div id="videoContainer">
+      <video id="video" autoplay playsinline muted></video>
+      <canvas id="scanCanvas"></canvas>
+      <div class="scan-line"></div>
+    </div>
+
+    <p id="scanMsg" style="font-size:14px;color:#888;text-align:center;max-width:340px;line-height:1.5;"></p>
+
+    <div class="conn-btn" id="scanBtn" onclick="startScan()">Scan to Connect</div>
+    <div class="conn-btn" id="cancelScanBtn" onclick="stopScan()" style="display:none;background:#555;color:#fff;border-top-color:#888;border-left-color:#888;border-right-color:#222;border-bottom-color:#222;">Cancel Scan</div>
+    <div class="conn-btn" id="disconnectBtn" onclick="disconnectFromPC()" style="display:none;background:#c0392b;color:#fff;border-top-color:#e74c3c;border-left-color:#e74c3c;border-right-color:#7b241c;border-bottom-color:#7b241c;">Disconnect</div>
+  </div>
+
+  <!-- Manual IP fallback -->
+  <div style="display:flex;flex-direction:column;align-items:center;gap:10px;width:100%;max-width:320px;">
+    <p style="color:#555;font-size:13px;text-align:center;">— or enter PC IP address —</p>
+    <p style="color:#555;font-size:12px;text-align:center;">Type just the IP — app connects to port 8080</p>
+    <input id="manualIP" type="text" placeholder="PC IP e.g. 192.168.0.89" inputmode="decimal"
+      style="background:#1a1a1a;border:1px solid #444;border-radius:10px;padding:12px 16px;font-size:18px;color:#fff;width:100%;outline:none;text-align:center;box-sizing:border-box;">
+    <div class="conn-btn" onclick="connectManual()" style="width:100%;text-align:center;">Connect</div>
+  </div>
+
+  <div id="msgLog"></div>
+</div>
+
+<!-- BAG MAPPING -->
+<div class="page" id="page-bagmapping" style="align-items:flex-start;">
+
+  <div class="page-topbar">
+    <div class="back-arrow" onclick="goBack()" title="Back">
+      <svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="48" height="48" rx="10" fill="#d4d4d4" stroke="#888" stroke-width="2"/>
+        <rect x="2" y="2" width="48" height="3" rx="2" fill="#efefef"/>
+        <rect x="2" y="2" width="3" height="48" rx="2" fill="#efefef"/>
+        <path d="M32 14 L18 26 L32 38" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </div>
+    <div id="connIndicator" onclick="goTo('page-settings')" title="Tap to connect">
+      <div id="connDot" class="disconnected"></div>
+      <span id="connLabel" class="disconnected">Not Connected</span>
+    </div>
+  </div>
+
+  <div class="bagmap-layout" style="width:100%;height:100%;">
+
+    <!-- Left: club selector -->
+    <div class="club-panel">
+  
+      <div class="club-grid">
+        <div class="map-btn" onclick="selectClub('1')">1</div>
+        <div class="map-btn" onclick="selectClub('2')">2</div>
+        <div class="map-btn" onclick="selectClub('3')">3</div>
+        <div class="map-btn" onclick="selectClub('4')">4</div>
+        <div class="map-btn" onclick="selectClub('5')">5</div>
+        <div class="map-btn" onclick="selectClub('6')">6</div>
+        <div class="map-btn" onclick="selectClub('7')">7</div>
+        <div class="map-btn" onclick="selectClub('8')">8</div>
+        <div class="map-btn" onclick="selectClub('9')">9</div>
+        <div class="map-btn" onclick="selectClub('0')">0</div>
+        <div class="map-btn" onclick="selectClub('°')">°</div>
+        <div class="map-btn" onclick="selectClub('DR')">DR</div>
+        <div class="map-btn" onclick="selectClub('W')">W</div>
+        <div class="map-btn" onclick="selectClub('I')">I</div>
+        <div class="map-btn" onclick="selectClub('H')">H</div>
+        <div class="map-btn" onclick="selectClub('L')">L</div>
+        <div class="map-btn" onclick="selectClub('S')">S</div>
+        <div class="map-btn" onclick="selectClub('P')">P</div>
+        <div class="map-btn" onclick="selectClub('Putt')">Putt</div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;background:#0f0f0f;border:1px solid #333;border-radius:10px;padding:8px 12px;height:44px;width:100%;box-sizing:border-box;overflow:hidden;flex-shrink:0;">
+        <span class="selected-label" id="selectedLabel" style="font-size:16px;font-weight:700;color:#EF9F27;letter-spacing:0.05em;">—</span>
+        <div onclick="backspace()" style="cursor:pointer;font-size:13px;font-weight:700;color:#888;padding:2px 8px;border:1px solid #333;border-radius:6px;">⌫</div>
+      </div>
+      <div class="action-btns">
+        <div class="action-btn clear" onclick="clearBag()">Clear</div>
+        <div class="action-btn apply" onclick="applyClub()">Apply</div>
+        <div class="action-btn save" onclick="saveBag()">Save</div>
+      </div>
+    </div>
+
+    <!-- Right: golf bag -->
+    <div class="bag-panel">
+      <div class="golf-bag" id="golfBag">
+        <div class="slot-row"><div class="slot next-slot" style="background:#2a2a3e;" data-slot="1"></div></div>
+        <div class="slot-row">
+          <div class="slot" style="background:#1e1e30;" data-slot="2"></div>
+          <div class="slot" style="background:#2a2a3e;" data-slot="3"></div>
+          <div class="slot" style="background:#1e1e30;" data-slot="4"></div>
+        </div>
+        <div class="slot-row">
+          <div class="slot" style="background:#2a2a3e;" data-slot="5"></div>
+          <div class="slot" style="background:#1e1e30;" data-slot="6"></div>
+          <div class="slot" style="background:#2a2a3e;" data-slot="7"></div>
+        </div>
+        <div class="slot-row">
+          <div class="slot" style="background:#1e1e30;" data-slot="8"></div>
+          <div class="slot" style="background:#2a2a3e;" data-slot="9"></div>
+          <div class="slot" style="background:#1e1e30;" data-slot="10"></div>
+        </div>
+        <div class="slot-row">
+          <div class="slot" style="background:#2a2a3e;" data-slot="11"></div>
+          <div class="slot" style="background:#1e1e30;" data-slot="12"></div>
+          <div class="slot" style="background:#2a2a3e;" data-slot="13"></div>
+        </div>
+        <div class="slot-row"><div class="slot" style="background:#1e1e30;" data-slot="14"></div></div>
+      </div>
+      <p style="font-size:11px;color:#555;text-align:center;">Tap Apply to fill next slot</p>
+    </div>
+
+  </div>
+</div>
+
+<!-- GAME PLAY -->
+<div class="page" id="page-gameplay">
+
+  <div class="page-topbar">
+    <div class="back-arrow" onclick="goBack()" title="Back">
+      <svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="48" height="48" rx="10" fill="#d4d4d4" stroke="#888" stroke-width="2"/>
+        <rect x="2" y="2" width="48" height="3" rx="2" fill="#efefef"/>
+        <rect x="2" y="2" width="3" height="48" rx="2" fill="#efefef"/>
+        <path d="M32 14 L18 26 L32 38" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </div>
+    <div id="connIndicator" onclick="goTo('page-settings')" title="Tap to connect">
+      <div id="connDot" class="disconnected"></div>
+      <span id="connLabel" class="disconnected">Not Connected</span>
+    </div>
+  </div>
+
+  <div style="width:100%;max-width:100%;">
+
+    <!-- Row 1: 6 buttons -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:8px;">
+      <div class="gp-btn gp-gray" onclick="sendKey('C')">Scorecard</div>
+      <div class="gp-btn gp-gray" onclick="sendKey('M')">Mulligan</div>
+      <div class="gp-btn gp-gray" onclick="sendKey('F')">Flyover</div>
+      <div class="gp-btn gp-blue" onclick="sendKey('2')">Camera to Ball</div>
+      <div class="gp-btn gp-blue" onclick="sendKey('3')">Camera Fly to Ball</div>
+    </div>
+
+    <!-- Row 2: 6 buttons — Tee Box aims removed, now empties -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:8px;">
+      <div class="gp-btn gp-gray" onclick="goTo('page-environment')">Environment</div>
+      <div class="gp-btn gp-gray" onclick="goTo('page-clubselection')">Club Selection</div>
+      <div class="gp-btn gp-gray" onclick="goTo('page-putter')">Putter</div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+    </div>
+
+    <!-- Row 3: 6 buttons -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:8px;">
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-blue" onclick="sendKey('H')">Toggle HUD</div>
+      <div class="gp-btn gp-gray" onclick="goTo('page-hud')">HUD</div>
+    </div>
+
+    <!-- Row 4: Last Tee Box, Aim Left, Aim Right, Next Tee Box + Tee Box aims under HUD -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:8px;margin-bottom:8px;">
+      <div class="gp-btn gp-gray" onclick="sendKey('Q')">Last Tee Box</div>
+      <div onclick="sendKeySpecial('left')" title="Aim Left" style="cursor:pointer;user-select:none;min-height:52px;display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 240 52" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:52px;">
+          <polygon points="28,26 52,4 240,4 240,48 52,48" fill="#185FA5" stroke="#85B7EB" stroke-width="2"/>
+          <polygon points="28,26 52,4 120,4 120,7 52,7" fill="#3a7fc1" opacity="0.5"/>
+          <text x="152" y="30" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,sans-serif">Aim Left</text>
+          <polygon points="28,26 38,16 38,36" fill="white" opacity="0.9"/>
+        </svg>
+      </div>
+      <div onclick="sendKeySpecial('right')" title="Aim Right" style="cursor:pointer;user-select:none;min-height:52px;display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 240 52" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:52px;">
+          <polygon points="212,26 188,4 0,4 0,48 188,48" fill="#185FA5" stroke="#85B7EB" stroke-width="2"/>
+          <polygon points="92,26 68,4 0,4 0,7 68,7" fill="#3a7fc1" opacity="0.5"/>
+          <text x="88" y="30" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,sans-serif">Aim Right</text>
+          <polygon points="212,26 202,16 202,36" fill="white" opacity="0.9"/>
+        </svg>
+      </div>
+      <div class="gp-btn gp-gray" onclick="sendKey('G')">Next Tee Box</div>
+      <div onclick="sendKey('A')" title="Tee Box Aim Left" style="cursor:pointer;user-select:none;min-height:52px;display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 240 52" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:52px;">
+          <polygon points="28,26 52,4 240,4 240,48 52,48" fill="#185FA5" stroke="#85B7EB" stroke-width="2"/>
+          <polygon points="28,26 52,4 120,4 120,7 52,7" fill="#3a7fc1" opacity="0.5"/>
+          <text x="152" y="22" text-anchor="middle" fill="white" font-size="10" font-weight="700" font-family="Segoe UI,sans-serif">Tee Box</text>
+          <text x="152" y="36" text-anchor="middle" fill="white" font-size="10" font-weight="700" font-family="Segoe UI,sans-serif">Aim Left</text>
+          <polygon points="28,26 38,16 38,36" fill="white" opacity="0.9"/>
+        </svg>
+      </div>
+      <div onclick="sendKey('B')" title="Tee Box Aim Right" style="cursor:pointer;user-select:none;min-height:52px;display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 240 52" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:52px;">
+          <polygon points="212,26 188,4 0,4 0,48 188,48" fill="#185FA5" stroke="#85B7EB" stroke-width="2"/>
+          <polygon points="92,26 68,4 0,4 0,7 68,7" fill="#3a7fc1" opacity="0.5"/>
+          <text x="88" y="22" text-anchor="middle" fill="white" font-size="10" font-weight="700" font-family="Segoe UI,sans-serif">Tee Box</text>
+          <text x="88" y="36" text-anchor="middle" fill="white" font-size="10" font-weight="700" font-family="Segoe UI,sans-serif">Aim Right</text>
+          <polygon points="212,26 202,16 202,36" fill="white" opacity="0.9"/>
+        </svg>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- ENVIRONMENT page -->
+<div class="page" id="page-environment">
+
+  <div class="page-topbar">
+    <div class="back-arrow" onclick="goBack()" title="Back">
+      <svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="48" height="48" rx="10" fill="#d4d4d4" stroke="#888" stroke-width="2"/>
+        <rect x="2" y="2" width="48" height="3" rx="2" fill="#efefef"/>
+        <rect x="2" y="2" width="3" height="48" rx="2" fill="#efefef"/>
+        <path d="M32 14 L18 26 L32 38" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </div>
+    <div id="connIndicator" onclick="goTo('page-settings')" title="Tap to connect">
+      <div id="connDot" class="disconnected"></div>
+      <span id="connLabel" class="disconnected">Not Connected</span>
+    </div>
+  </div>
+
+  <div style="width:100%;max-width:100%;">
+
+    <!-- Row 1: 6 buttons -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:7px;">
+      <div class="gp-btn gp-blue" onclick="sendKey('E')">Console Tall</div>
+      <div class="gp-btn gp-blue" onclick="sendKey('R')">Console Short</div>
+      <div class="gp-btn gp-blue" onclick="sendKey('S')">Full Screen</div>
+      <div class="gp-btn gp-blue" onclick="sendKey('T')">Check FPS</div>
+  </div>
+
+    <!-- Row 2: 6 buttons -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:7px;">
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+    </div>
+  </div>
+</div>
+
+
+
+<!-- CLUB SELECTION page -->
+<div class="page" id="page-clubselection">
+  <div style="width:100%;max-width:100%;display:flex;flex-direction:row;gap:20px;align-items:flex-start;">
+
+    <!-- Left: 6x4 button grid -->
+    <div style="flex:1;">
+
+      <!-- Row 1: Back + 5 empty -->
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:7px;">
+        <div class="back-arrow" onclick="goBack()" title="Back">
+        <svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+          <rect x="2" y="2" width="48" height="48" rx="10" fill="#d4d4d4" stroke="#888" stroke-width="2"/>
+          <rect x="2" y="2" width="48" height="3" rx="2" fill="#efefef"/>
+          <rect x="2" y="2" width="3" height="48" rx="2" fill="#efefef"/>
+          <path d="M32 14 L18 26 L32 38" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+        </svg>
+      </div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+      </div>
+      </div>
+
+      <!-- Row 2: Club display window at col 1, rest empty -->
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:7px;">
+        <div id="clubDisplayWindow" style="background:#0f0f0f;border:2px solid #7F77DD;border-radius:10px;min-height:52px;display:flex;align-items:center;justify-content:center;font-size:36px;font-weight:700;color:#EF9F27;letter-spacing:0.05em;">—</div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+      </div>
+
+      <!-- Row 3: Clear Selected Club at col 1 -->
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:7px;">
+        <div class="gp-btn gp-gray" onclick="clearClubSelection()">Clear Club</div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+      </div>
+
+      <!-- Row 4: Select Club at col 1 -->
+      <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;">
+        <div class="gp-btn gp-gray" onclick="sendSelectedClub()">Select Club</div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+        <div class="gp-btn gp-empty"></div>
+      </div>
+
+    </div>
+
+    <!-- Right: Golf bag from saved mapping -->
+    <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:6px;min-width:960px;max-width:960px;flex:1;">
+<p style="color:#888;font-size:12px;margin-bottom:6px;">Tap a club to select</p>
+      <div class="golf-bag" id="clubSelectBag">
+        <div class="slot-row"><div class="slot cs-slot" style="background:#2a2a3e;" data-slot="1"></div></div>
+        <div class="slot-row">
+          <div class="slot cs-slot" style="background:#1e1e30;" data-slot="2"></div>
+          <div class="slot cs-slot" style="background:#2a2a3e;" data-slot="3"></div>
+          <div class="slot cs-slot" style="background:#1e1e30;" data-slot="4"></div>
+        </div>
+        <div class="slot-row">
+          <div class="slot cs-slot" style="background:#2a2a3e;" data-slot="5"></div>
+          <div class="slot cs-slot" style="background:#1e1e30;" data-slot="6"></div>
+          <div class="slot cs-slot" style="background:#2a2a3e;" data-slot="7"></div>
+        </div>
+        <div class="slot-row">
+          <div class="slot cs-slot" style="background:#1e1e30;" data-slot="8"></div>
+          <div class="slot cs-slot" style="background:#2a2a3e;" data-slot="9"></div>
+          <div class="slot cs-slot" style="background:#1e1e30;" data-slot="10"></div>
+        </div>
+        <div class="slot-row">
+          <div class="slot cs-slot" style="background:#2a2a3e;" data-slot="11"></div>
+          <div class="slot cs-slot" style="background:#1e1e30;" data-slot="12"></div>
+          <div class="slot cs-slot" style="background:#2a2a3e;" data-slot="13"></div>
+        </div>
+        <div class="slot-row"><div class="slot cs-slot" style="background:#1e1e30;" data-slot="14"></div></div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- PUTTER page -->
+<div class="page" id="page-putter">
+
+  <div class="page-topbar">
+    <div class="back-arrow" onclick="goBack()" title="Back">
+      <svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="48" height="48" rx="10" fill="#d4d4d4" stroke="#888" stroke-width="2"/>
+        <rect x="2" y="2" width="48" height="3" rx="2" fill="#efefef"/>
+        <rect x="2" y="2" width="3" height="48" rx="2" fill="#efefef"/>
+        <path d="M32 14 L18 26 L32 38" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </div>
+    <div id="connIndicator" onclick="goTo('page-settings')" title="Tap to connect">
+      <div id="connDot" class="disconnected"></div>
+      <span id="connLabel" class="disconnected">Not Connected</span>
+    </div>
+  </div>
+
+  <div style="width:100%;max-width:100%;">
+
+    <!-- Row 1: 6 buttons -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:7px;">
+      <div class="gp-btn gp-gray" onclick="sendKey('K')">Heatmap</div>
+      <div class="gp-btn gp-gray" onclick="sendKey('N')">Green Grid</div>
+      <div class="gp-btn gp-gray" onclick="sendKey('L')">Green Vertical Dots</div>
+      <div onclick="sendKeySpecial('left')" title="Aim Left" style="cursor:pointer;user-select:none;min-height:52px;display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 240 52" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:52px;">
+          <polygon points="28,26 52,4 240,4 240,48 52,48" fill="#185FA5" stroke="#85B7EB" stroke-width="2"/>
+          <polygon points="28,26 52,4 120,4 120,7 52,7" fill="#3a7fc1" opacity="0.5"/>
+          <text x="152" y="30" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,sans-serif">Aim Left</text>
+          <polygon points="28,26 38,16 38,36" fill="white" opacity="0.9"/>
+        </svg>
+      </div>
+      <div onclick="sendKeySpecial('right')" title="Aim Right" style="cursor:pointer;user-select:none;min-height:52px;display:flex;align-items:center;justify-content:center;">
+        <svg viewBox="0 0 240 52" xmlns="http://www.w3.org/2000/svg" style="width:100%;height:52px;">
+          <polygon points="212,26 188,4 0,4 0,48 188,48" fill="#185FA5" stroke="#85B7EB" stroke-width="2"/>
+          <polygon points="92,26 68,4 0,4 0,7 68,7" fill="#3a7fc1" opacity="0.5"/>
+          <text x="88" y="30" text-anchor="middle" fill="white" font-size="12" font-weight="700" font-family="Segoe UI,sans-serif">Aim Right</text>
+          <polygon points="212,26 202,16 202,36" fill="white" opacity="0.9"/>
+        </svg>
+      </div>
+    </div>
+
+    <!-- Row 2: 6 buttons -->
+    <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:7px;margin-bottom:7px;">
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+      <div class="gp-btn gp-empty"></div>
+    </div>
+  </div>
+</div>
+
+<!-- HUD page -->
+<div class="page" id="page-hud">
+    <div class="page-topbar">
+    <div class="back-arrow" onclick="goBack()" title="Back">
+      <svg viewBox="0 0 52 52" xmlns="http://www.w3.org/2000/svg">
+        <rect x="2" y="2" width="48" height="48" rx="10" fill="#d4d4d4" stroke="#888" stroke-width="2"/>
+        <rect x="2" y="2" width="48" height="3" rx="2" fill="#efefef"/>
+        <rect x="2" y="2" width="3" height="48" rx="2" fill="#efefef"/>
+        <path d="M32 14 L18 26 L32 38" stroke="#1a1a1a" stroke-width="4" stroke-linecap="round" stroke-linejoin="round" fill="none"/>
+      </svg>
+    </div>
+    <div id="connIndicator" onclick="goTo('page-settings')" title="Tap to connect">
+      <div id="connDot" class="disconnected"></div>
+      <span id="connLabel" class="disconnected">Not Connected</span>
+    </div>
+  </div>
+  <div style="width:60%;max-width:60%;">
+      <div style="flex:1;background:#1a1a2e;border:1px solid #444;border-radius:10px;padding:12px 20px;display:flex;align-items:center;justify-content:center;">
+        <span style="font-size:22px;font-weight:700;color:#ffffff;text-align:center;line-height:1.3;">
+          Move aim point on HUD and select location button to set
+        </span>
+      </div>
+    </div>
+
+    <!-- Touchpad row: Select Location left, touchpad centre, empty right -->
+    <div style="display:grid;grid-template-columns:1fr 3fr 1fr;gap:7px;">
+
+      <!-- Col 1: Select Location in middle, rest empty -->
+      <div style="display:flex;flex-direction:column;gap:7px;">
+        <div class="gp-btn gp-empty" style="flex:1;min-height:52px;"></div>
+        <div class="gp-btn gp-gray" onclick="sendHudClick()" style="flex:1;min-height:52px;display:flex;align-items:center;justify-content:center;">Select Location</div>
+        <div class="gp-btn gp-empty" style="flex:1;min-height:52px;"></div>
+        <div class="gp-btn gp-empty" style="flex:1;min-height:52px;"></div>
+      </div>
+
+      <!-- Col 2-4: touchpad -->
+      <div id="hudTouchpad" style="background:#1a1a2e;border:2px solid #7F77DD;border-radius:14px;min-height:456px;display:flex;align-items:center;justify-content:center;position:relative;cursor:crosshair;user-select:none;">
+        <div id="hudCursor" style="width:16px;height:16px;border-radius:50%;background:#EF9F27;border:2px solid #fff;position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;transition:top 0.05s,left 0.05s;"></div>
+        <p style="color:#ffffff;font-size:12px;position:absolute;bottom:10px;width:100%;text-align:center;">Touch &amp; drag to move aim point</p>
+      </div>
+
+      <!-- Col 5: all empty -->
+      <div style="display:flex;flex-direction:column;gap:7px;">
+        <div class="gp-btn gp-empty" style="flex:1;min-height:52px;"></div>
+        <div class="gp-btn gp-empty" style="flex:1;min-height:52px;"></div>
+        <div class="gp-btn gp-empty" style="flex:1;min-height:52px;"></div>
+        <div class="gp-btn gp-empty" style="flex:1;min-height:52px;"></div>
+      </div>
+
+    </div>
+
+  </div>
+</div>
+
+<script>
+  // ── Browser check — only warn on mobile non-Chrome ──
+  (function() {
+    const ua = navigator.userAgent;
+    console.log('Browser UA:', ua);
+    const isMobile  = /Android|iPhone|iPad|iPod/i.test(ua);
+    const isChrome  = /Chrome/i.test(ua) || /Chromium/i.test(ua) || /CriOS/i.test(ua);
+    const isSamsung = /SamsungBrowser/i.test(ua);
+    // Only warn if on a MOBILE device AND not using Chrome/Samsung
+    if (isMobile && !isChrome && !isSamsung) {
+      document.getElementById('chrome-warning').classList.add('show');
+    }
+    console.log('Mobile:', isMobile, 'Chrome:', isChrome, 'Samsung:', isSamsung);
+  })();
+
+  // ── Lock orientation to landscape ──
+  (function() {
+    if (screen.orientation && screen.orientation.lock) {
+      screen.orientation.lock('landscape').catch(() => {});
+    }
+  })();
+
+  // ── Quit ──
+  function quitApp() {
+    if (confirm('Are you sure you want to quit?')) {
+      window.close();
+      // Fallback message if window.close() is blocked by browser
+      document.body.innerHTML = '<div style="display:flex;align-items:center;justify-content:center;height:100vh;background:#0f0f0f;color:#888;font-family:Segoe UI,sans-serif;font-size:16px;">You can now close this tab.</div>';
+    }
+  }
+
+  // ── Navigation ──
+  const navHistory = [];
+  function goTo(pageId) {
+    const cur = document.querySelector('.page.active');
+    navHistory.push(cur.id);
+    cur.classList.remove('active');
+    document.getElementById(pageId).classList.add('active');
+    // backBtn removed
+    if (pageId === 'page-clubselection') loadClubSelectBag();
+  }
+  function goBack() {
+    if (!navHistory.length) return;
+    document.querySelector('.page.active').classList.remove('active');
+    document.getElementById(navHistory.pop()).classList.add('active');
+    // backBtn removed
+  }
+
+  // ── WebSocket ──
+  let ws = null;
+  let pingTimer = null;
+  let videoStream = null;
+  let scanTimer = null;
+
+  function updateConnectBtn(connected, ip) {
+    const pill   = document.getElementById('connStatusPill');
+    const scanBtn = document.getElementById('scanBtn');
+    const discBtn = document.getElementById('disconnectBtn');
+    if (connected && ip) {
+      if (pill)    { pill.textContent = 'Connected: ' + ip; pill.className = 'scan-status-pill connected'; }
+      if (scanBtn) scanBtn.style.display = 'none';
+      if (discBtn) discBtn.style.display = 'inline-block';
+    } else {
+      if (pill)    { pill.textContent = 'Not Connected'; pill.className = 'scan-status-pill not-connected'; }
+      if (scanBtn) scanBtn.style.display = 'inline-block';
+      if (discBtn) discBtn.style.display = 'none';
+    }
+  }
+
+  function startPing() {
+    if (pingTimer) clearInterval(pingTimer);
+    let missedPings = 0;
+    const MAX_MISSED = 3; // Allow 3 missed pings before declaring disconnected
+
+    pingTimer = setInterval(() => {
+      if (ws && ws.readyState === WebSocket.OPEN) {
+        try {
+          ws.send(JSON.stringify({ type: 'ping' }));
+          missedPings++;
+          if (missedPings >= MAX_MISSED) {
+            console.warn('Too many missed pings:', missedPings);
+            // Don't disconnect — just warn. Unreal may be busy.
+            logMsg('Warning: PC not responding to pings — may be busy');
+          }
+        } catch(e) {
+          console.warn('Ping send failed:', e);
+        }
+      } else if (!ws || ws.readyState === WebSocket.CLOSED) {
+        clearInterval(pingTimer);
+        setStatus('disconnected', 'Not Connected');
+        updateConnectBtn(false, null);
+      }
+    }, 30000); // Every 30 seconds — much less aggressive
+
+    // Reset missed count when pong received
+    window._resetPingCount = () => { missedPings = 0; };
+  }
+
+  // ── QR Scanner ──
+  function startScan() {
+    // If already scanning, stop first cleanly
+    if (videoStream) { stopScan(); }
+
+    const pill = document.getElementById('connStatusPill');
+    const vc = document.getElementById('videoContainer');
+    const msg = document.getElementById('scanMsg');
+    const v = document.getElementById('video');
+
+    // Fully reset video element
+    v.srcObject = null;
+    v.load();
+
+    pill.textContent = 'Scanning...';
+    pill.className = 'scan-status-pill scanning';
+    msg.textContent = 'Starting camera...';
+    vc.style.display = 'block';
+    const cancelBtn = document.getElementById('cancelScanBtn');
+    if (cancelBtn) cancelBtn.style.display = 'inline-block';
+
+    // Small delay to allow camera to release from previous use
+    setTimeout(() => {
+      navigator.mediaDevices.getUserMedia({
+        video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 } },
+        audio: false
+      })
+      .then(stream => {
+        videoStream = stream;
+        v.srcObject = stream;
+        v.onloadedmetadata = () => {
+          v.play();
+          msg.textContent = 'Scan the STEP 2 QR code from the server window. It contains just the IP address.';
+          if (scanTimer) clearInterval(scanTimer);
+          scanTimer = setInterval(scanFrame, 300);
+        };
+      })
+      .catch(err => {
+        msg.textContent = 'Camera error: ' + err.message + ' — try reloading the page';
+        pill.textContent = 'Not Connected';
+        pill.className = 'scan-status-pill not-connected';
+        vc.style.display = 'none';
+      });
+    }, 300);
+  }
+
+  function scanFrame() {
+    const v = document.getElementById('video');
+    const c = document.getElementById('scanCanvas');
+    if (!v.videoWidth || v.paused || v.ended) return;
+    c.width = v.videoWidth;
+    c.height = v.videoHeight;
+    const ctx = c.getContext('2d');
+    ctx.drawImage(v, 0, 0);
+    const img = ctx.getImageData(0, 0, c.width, c.height);
+    const code = jsQR(img.data, img.width, img.height, { inversionAttempts: 'attemptBoth' });
+    if (code && code.data) {
+      const raw = code.data.trim();
+      document.getElementById('scanMsg').textContent = 'Read: ' + raw;
+      console.log('QR scanned raw:', raw);
+      let wsUrl = null;
+      const trimmed = raw.trim();
+      // Accept ws:// directly
+      if (trimmed.startsWith('ws://')) {
+        wsUrl = trimmed;
+      }
+      // Accept plain IP:port e.g. 192.168.1.50:8080
+      else if (/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+:[0-9]+$/.test(trimmed)) {
+        wsUrl = 'ws://' + trimmed;
+      }
+      // Accept plain IP only (most common - what server now sends)
+      else if (/^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$/.test(trimmed)) {
+        wsUrl = 'ws://' + trimmed + ':8080'; // WebSocket always 8080
+      }
+      // Accept http:// URL - extract IP
+      else if (trimmed.startsWith('http://')) {
+        const ipMatch = trimmed.match(/[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+/);
+        if (ipMatch) wsUrl = 'ws://' + ipMatch[0] + ':8080';
+      }
+      if (wsUrl) {
+        document.getElementById('scanMsg').textContent = 'Found IP! Connecting...';
+        stopScan();
+        connectWS(wsUrl);
+      } else {
+        document.getElementById('scanMsg').textContent = 'Scanned: ' + raw + ' (not an IP — try again)';
+      }
+    }
+  }
+
+  function connectManual() {
+    const ip = document.getElementById('manualIP').value.trim()
+                  .replace('http://','').replace('ws://','').split(':')[0].split('/')[0];
+    if (!ip) { alert('Please enter the PC IP address e.g. 192.168.0.89'); return; }
+    // Always connect WebSocket to port 8080
+    const wsUrl = 'ws://' + ip + ':8080';
+    console.log('Connecting to:', wsUrl);
+    document.getElementById('scanMsg').textContent = 'Connecting to ' + wsUrl + '...';
+    connectWS(wsUrl);
+  }
+
+  function stopScan() {
+    if (scanTimer) { clearInterval(scanTimer); scanTimer = null; }
+    if (videoStream) {
+      videoStream.getTracks().forEach(t => { t.stop(); });
+      videoStream = null;
+    }
+    const v = document.getElementById('video');
+    v.srcObject = null;
+    document.getElementById('videoContainer').style.display = 'none';
+    const cancelBtn = document.getElementById('cancelScanBtn');
+    if (cancelBtn) cancelBtn.style.display = 'none';
+    const pill = document.getElementById('connStatusPill');
+    if (pill.textContent === 'Scanning...') {
+      pill.textContent = 'Not Connected';
+      pill.className = 'scan-status-pill not-connected';
+    }
+  }
+
+  function disconnectFromPC() {
+    if (ws) { ws.close(); ws = null; }
+    updateConnectBtn(false, null);
+    logMsg('Disconnected');
+  }
+
+  function connectWS(url) {
+    const ip = url.replace('ws://','').split(':')[0];
+    console.log('connectWS called with:', url);
+    logMsg('Connecting to ' + url + '...');
+
+    // Show connection attempt in status
+    const pill = document.getElementById('connStatusPill');
+    if (pill) { pill.textContent = 'Connecting...'; pill.className = 'scan-status-pill scanning'; }
+
+    if (ws) {
+      try { ws.close(); } catch(e) {}
+      ws = null;
+    }
+
+    try {
+      ws = new WebSocket(url);
+      // Set binary type for better compatibility
+      ws.binaryType = 'arraybuffer';
+    } catch(e) {
+      logMsg('ERROR creating WebSocket: ' + e.message);
+      updateConnectBtn(false, null);
+      return;
+    }
+
+    ws.onopen = () => {
+      console.log('WebSocket opened');
+      logMsg('WebSocket open — waiting for server hello...');
+      setStatus('connected', 'Connected to PC');
+      updateConnectBtn(true, ip);
+      startPing();
+      logMsg('Connected — monitoring with 30s heartbeat');
+    };
+
+    ws.onclose = (e) => {
+      console.log('WebSocket closed', e.code, e.reason);
+      logMsg('Disconnected (code:' + e.code + ' reason:' + (e.reason||'none') + ')');
+      setStatus('disconnected', 'Disconnected');
+      updateConnectBtn(false, null);
+      ws = null;
+    };
+
+    ws.onerror = (e) => {
+      console.log('WebSocket error', e);
+      logMsg('Connection ERROR — check IP and that server is running on port 8080');
+      setStatus('disconnected', 'Connection failed');
+      updateConnectBtn(false, null);
+      ws = null;
+    };
+
+    ws.onmessage = (e) => {
+      console.log('Message from server:', e.data);
+      try {
+        const d = JSON.parse(e.data);
+        if (d.type === 'pong') {
+          if (window._resetPingCount) window._resetPingCount();
+          return;
+        }
+        logMsg('Server: ' + (d.message || JSON.stringify(d)));
+        if (d.type === 'bag_mapping_saved') {
+          const s = document.querySelector('[data-slot="' + d.slot + '"]');
+          if (s) { s.textContent = d.club; s.classList.add('assigned'); }
+        }
+      } catch(err) {
+        logMsg('Bad message from server: ' + e.data);
+      }
+    };
+  }
+
+
+  // ── Club Selection page ──
+  let csSelectedClub = '';
+
+  function loadClubSelectBag() {
+    // Reset all slots first
+    document.querySelectorAll('#clubSelectBag .cs-slot').forEach(s => {
+      s.textContent = '';
+      s.classList.remove('assigned', 'cs-selected');
+      s.style.outline = '';
+      s.onclick = () => {};
+    });
+
+    // Also clear selected display
+    const disp = document.getElementById('clubDisplayWindow');
+    if (disp) disp.textContent = '—';
+    csSelectedClub = '';
+
+    const saved = localStorage.getItem('bagMapping');
+    if (!saved) return;
+
+    let mapping;
+    try { mapping = JSON.parse(saved); } catch(e) { return; }
+
+    Object.entries(mapping).forEach(([slot, club]) => {
+      const s = document.querySelector('#clubSelectBag [data-slot="' + slot + '"]');
+      if (s && club && club.trim() !== '') {
+        s.textContent = club;
+        s.classList.add('assigned');
+        // Use closure to capture correct values
+        (function(el, c) {
+          el.onclick = function() { selectClubFromBag(el, c); };
+        })(s, club);
+      }
+    });
+  }
+
+  function selectClubFromBag(el, club) {
+    document.querySelectorAll('.cs-slot').forEach(s => s.classList.remove('cs-selected'));
+    el.classList.add('cs-selected');
+    csSelectedClub = club;
+    document.getElementById('clubDisplayWindow').textContent = club;
+  }
+
+  function clearClubSelection() {
+    document.querySelectorAll('.cs-slot').forEach(s => s.classList.remove('cs-selected'));
+    csSelectedClub = '';
+    document.getElementById('clubDisplayWindow').textContent = '—';
+  }
+
+  function sendSelectedClub() {
+    if (!csSelectedClub) { alert('Please select a club first'); return; }
+    sendToPC({ type: 'gameplay', action: csSelectedClub });
+    logMsg('Club sent to PC: ' + csSelectedClub);
+  }
+
+  // ── HUD Touchpad ──
+  (function() {
+    let touching = false;
+    let lastX = null, lastY = null;
+    const SENSITIVITY = 3;
+
+    function initTouchpad() {
+      const pad = document.getElementById('hudTouchpad');
+      const cursor = document.getElementById('hudCursor');
+      if (!pad) return;
+
+      function moveCursor(x, y) {
+        const rect = pad.getBoundingClientRect();
+        const px = Math.max(8, Math.min(rect.width - 8, x - rect.left));
+        const py = Math.max(8, Math.min(rect.height - 8, y - rect.top));
+        cursor.style.left = px + 'px';
+        cursor.style.top = py + 'px';
+      }
+
+      function sendMove(dx, dy) {
+        sendToPC({ type: 'hud_mouse_move', dx: Math.round(dx * SENSITIVITY), dy: Math.round(dy * SENSITIVITY) });
+      }
+
+      // Touch events
+      pad.addEventListener('touchstart', e => {
+        e.preventDefault();
+        touching = true;
+        lastX = e.touches[0].clientX;
+        lastY = e.touches[0].clientY;
+        moveCursor(lastX, lastY);
+      }, { passive: false });
+
+      pad.addEventListener('touchmove', e => {
+        e.preventDefault();
+        if (!touching) return;
+        const x = e.touches[0].clientX;
+        const y = e.touches[0].clientY;
+        sendMove(x - lastX, y - lastY);
+        moveCursor(x, y);
+        lastX = x; lastY = y;
+      }, { passive: false });
+
+      pad.addEventListener('touchend', () => { touching = false; lastX = null; lastY = null; });
+
+      // Mouse events (for desktop testing)
+      pad.addEventListener('mousedown', e => { touching = true; lastX = e.clientX; lastY = e.clientY; moveCursor(e.clientX, e.clientY); });
+      pad.addEventListener('mousemove', e => {
+        if (!touching) return;
+        sendMove(e.clientX - lastX, e.clientY - lastY);
+        moveCursor(e.clientX, e.clientY);
+        lastX = e.clientX; lastY = e.clientY;
+      });
+      pad.addEventListener('mouseup', () => { touching = false; });
+      pad.addEventListener('mouseleave', () => { touching = false; });
+    }
+
+    // Init when page loads
+    window.addEventListener('load', initTouchpad);
+  })();
+
+  function sendHudClick() {
+    sendToPC({ type: 'hud_click' });
+    logMsg('HUD location selected');
+  }
+
+  function sendKey(key) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+      logMsg('Not connected — scan QR in Connect to PC first');
+      return;
+    }
+    sendToPC({ type: 'gameplay', action: key });
+    logMsg('Sent: ' + key);
+  }
+
+  function sendKeySpecial(key) {
+    sendToPC({ type: 'gameplay_special', action: key });
+  }
+
+  function sendToPC(data) {
+    if (ws && ws.readyState === WebSocket.OPEN) {
+      const msg = JSON.stringify(data);
+      console.log('Sending to PC:', msg);
+      logMsg('Sending: ' + JSON.stringify(data));
+      ws.send(msg);
+    } else {
+      const state = ws ? ['CONNECTING','OPEN','CLOSING','CLOSED'][ws.readyState] : 'null';
+      logMsg('NOT CONNECTED (state:' + state + ') — go to Connect to PC first');
+      console.warn('sendToPC: ws state =', state);
+    }
+  }
+
+  function setStatus(type, msg) {
+    const dot   = document.getElementById('connDot');
+    const label = document.getElementById('connLabel');
+    if (!dot || !label) return;
+    if (type === 'connected') {
+      dot.className   = 'connected';
+      label.className = 'connected';
+      label.textContent = msg || 'Connected';
+    } else {
+      dot.className   = 'disconnected';
+      label.className = 'disconnected';
+      label.textContent = 'Not Connected';
+    }
+  }
+  function logMsg(msg) {
+    const log = document.getElementById('msgLog');
+    log.style.display = 'block';
+    log.innerHTML += `<div>${new Date().toLocaleTimeString()} — ${msg}</div>`;
+    log.scrollTop = log.scrollHeight;
+  }
+
+  // ── Bag Mapping ──
+  let chosenClub = '';
+  let nextSlot = 1;
+  const TOTAL_SLOTS = 14;
+
+  function selectClub(club) {
+    chosenClub += club;
+    document.getElementById('selectedLabel').textContent = 'Club: ' + chosenClub;
+  }
+
+  function backspace() {
+    if (chosenClub.length > 0) {
+      chosenClub = chosenClub.slice(0, -1);
+      document.getElementById('selectedLabel').textContent = chosenClub || '—';
+    }
+  }
+
+  function highlightNextSlot() {
+    document.querySelectorAll('.slot').forEach(s => s.classList.remove('next-slot'));
+    if (nextSlot <= TOTAL_SLOTS) {
+      const s = document.querySelector(`[data-slot="${nextSlot}"]`);
+      if (s && !s.classList.contains('assigned')) s.classList.add('next-slot');
+    }
+  }
+
+  function applyClub() {
+    if (!chosenClub) { alert('Please select a club first'); return; }
+    if (nextSlot > TOTAL_SLOTS) { alert('Bag is full!'); return; }
+    const s = document.querySelector(`[data-slot="${nextSlot}"]`);
+    if (s) {
+      s.textContent = chosenClub;
+      s.classList.add('assigned');
+      s.classList.remove('next-slot');
+      sendToPC({ type: 'bag_mapping', slot: nextSlot, club: chosenClub });
+      nextSlot++;
+      chosenClub = '';
+      document.getElementById('selectedLabel').textContent = 'No club selected';
+      highlightNextSlot();
+    }
+  }
+
+  function clearBag() {
+    if (!confirm('Clear all clubs from the bag?')) return;
+    document.querySelectorAll('.slot').forEach(s => {
+      s.textContent = '';
+      s.classList.remove('assigned', 'next-slot');
+    });
+    nextSlot = 1;
+    chosenClub = '';
+    document.getElementById('selectedLabel').textContent = 'No club selected';
+    highlightNextSlot();
+    sendToPC({ type: 'bag_clear' });
+  }
+
+  function saveBag() {
+    const mapping = {};
+    // Only save from the main bag mapping page slots (not club selection page slots)
+    document.querySelectorAll('#golfBag .slot').forEach(s => {
+      if (s.textContent && s.textContent.trim() !== '') {
+        mapping[s.dataset.slot] = s.textContent.trim();
+      }
+    });
+    if (Object.keys(mapping).length === 0) {
+      alert('No clubs to save — please add clubs to the bag first.');
+      return;
+    }
+    localStorage.setItem('bagMapping', JSON.stringify(mapping));
+    sendToPC({ type: 'settings', settings: { bagMapping: mapping } });
+    logMsg('Bag saved! ' + Object.keys(mapping).length + ' clubs saved.');
+    alert('Bag saved! ' + Object.keys(mapping).length + ' clubs.');
+  }
+
+  // Load saved bag + auto-connect from URL param on page load
+  window.addEventListener('load', () => {
+    // ── Auto-connect if IP passed in URL ──
+    const params = new URLSearchParams(window.location.search);
+    const wsIP   = params.get('ws');
+    if (wsIP) {
+      console.log('IP from URL:', wsIP);
+      const ipField = document.getElementById('manualIP');
+      if (ipField) ipField.value = wsIP;
+      // Auto-connect after 1s to let page fully render
+      setTimeout(() => {
+        logMsg('Auto-connecting to ' + wsIP + '...');
+        connectWS('ws://' + wsIP + ':8080');
+      }, 1000);
+    }
+    const savedBag = localStorage.getItem('bagMapping');
+    if (savedBag) {
+      let mapping;
+      try { mapping = JSON.parse(savedBag); } catch(e) { return; }
+      let highest = 0;
+      Object.entries(mapping).forEach(([slot, club]) => {
+        // Only update main bag page slots (inside #golfBag)
+        const s = document.querySelector('#golfBag [data-slot="' + slot + '"]');
+        if (s && club) { s.textContent = club; s.classList.add('assigned'); }
+        if (parseInt(slot) > highest) highest = parseInt(slot);
+      });
+      nextSlot = highest + 1;
+    }
+    highlightNextSlot();
+  });
+</script>
+</body>
+</html>
